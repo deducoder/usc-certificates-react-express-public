@@ -1,0 +1,299 @@
+# Plan de Implementación para Edición de Carreras de Alumnos
+
+## Información General
+
+- **Fecha:** 14 de Mayo de 2024
+- **Autor:** Equipo de Desarrollo
+- **Versión:** 1.0
+- **Módulo:** Gestión de Alumnos
+
+## Descripción General
+
+Este documento detalla el plan de implementación para ampliar la funcionalidad de edición de alumnos, permitiendo visualizar y modificar la carrera a la que cada alumno está inscrito directamente desde la interfaz de gestión de estudiantes.
+
+## 1. Modificación del Frontend
+
+### 1.1 Actualización de StudentsPage.tsx
+
+#### Modificar el estado de la página
+
+```typescript
+// Añadir estados para manejar carreras
+const [careers, setCareers] = useState<Career[]>([]);
+const [selectedCareer, setSelectedCareer] = useState<number | null>(null);
+```
+
+#### Añadir función para cargar carreras
+
+```typescript
+const fetchCareers = async () => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/careers`);
+    if (!response.ok) throw new Error("Error al obtener carreras");
+    const data = await response.json();
+    setCareers(data);
+  } catch (error) {
+    console.error(error);
+    setAlertMessage("Error al cargar carreras");
+    setAlertSeverity("error");
+    setAlertOpen(true);
+  }
+};
+```
+
+#### Modificar useEffect para cargar carreras
+
+```typescript
+useEffect(() => {
+  fetchStudents();
+  fetchCareers(); // Añadir esta línea
+}, []);
+```
+
+#### Añadir columna de carrera en DataGrid
+
+```typescript
+// Añadir esta columna al array de columnas
+{
+  field: 'careerName',
+  headerName: 'CARRERA',
+  width: 180,
+  renderCell: (params) => {
+    const studentCareers = params.row.careers || [];
+    return studentCareers.length > 0
+      ? studentCareers[0].name
+      : 'Sin asignar';
+  }
+}
+```
+
+### 1.2 Actualización del Diálogo de Edición
+
+#### Modificar diálogo para incluir selector de carrera
+
+```typescript
+// Dentro del componente Dialog, añadir selector de carrera
+<FormControl fullWidth margin="normal">
+  <InputLabel id="career-select-label">Carrera</InputLabel>
+  <Select
+    labelId="career-select-label"
+    id="career-select"
+    value={selectedCareer || ""}
+    onChange={(e) => setSelectedCareer(e.target.value as number)}
+  >
+    <MenuItem value="">Sin carrera</MenuItem>
+    {careers.map((career) => (
+      <MenuItem key={career.careerId} value={career.careerId}>
+        {career.name}
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+```
+
+#### Actualizar manejo inicial del diálogo
+
+```typescript
+const handleEditRow = (row) => {
+  setSelectedRowEdit(row);
+
+  // Establecer la carrera seleccionada si el estudiante tiene alguna
+  if (row.careers && row.careers.length > 0) {
+    setSelectedCareer(row.careers[0].careerId);
+  } else {
+    setSelectedCareer(null);
+  }
+
+  setOpenEditDialog(true);
+};
+```
+
+#### Modificar función handleEditSubmit
+
+```typescript
+const handleEditSubmit = async (updatedRow) => {
+  try {
+    // 1. Actualizar datos básicos del estudiante
+    const dataToSend = {
+      STUDENT_ID: updatedRow.id,
+      STUDENT_NAME: updatedRow.STUDENT_NAME,
+      STUDENT_PA_LAST_NAME: updatedRow.STUDENT_PA_LAST_NAME,
+      STUDENT_MA_LAST_NAME: updatedRow.STUDENT_MA_LAST_NAME,
+      STUDENT_TUITION: updatedRow.STUDENT_TUITION,
+    };
+
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/students/${dataToSend.STUDENT_ID}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSend),
+      }
+    );
+
+    if (!response.ok) throw new Error("Error al actualizar el estudiante");
+
+    // 2. Actualizar la carrera del estudiante
+    await updateStudentCareer(updatedRow.id);
+
+    setAlertMessage("Estudiante actualizado correctamente");
+    setAlertSeverity("success");
+    setAlertOpen(true);
+
+    // Recargar datos
+    setTimeout(() => {
+      fetchStudents();
+    }, 1000);
+
+    setOpenEditDialog(false);
+    setSelectedRowEdit(null);
+    setSelectedCareer(null);
+  } catch (error) {
+    console.error(error);
+    setAlertMessage("Error al actualizar el estudiante");
+    setAlertSeverity("error");
+    setAlertOpen(true);
+  }
+};
+```
+
+#### Agregar función para actualizar la carrera del estudiante
+
+```typescript
+const updateStudentCareer = async (studentId) => {
+  try {
+    // Si el estudiante tenía carreras previamente
+    const currentStudent = students.find((s) => s.id === studentId);
+    if (
+      currentStudent &&
+      currentStudent.careers &&
+      currentStudent.careers.length > 0
+    ) {
+      // Eliminar la carrera actual
+      await fetch(
+        `${import.meta.env.VITE_API_URL}/api/students-careers/${studentId}/${
+          currentStudent.careers[0].careerId
+        }`,
+        {
+          method: "DELETE",
+        }
+      );
+    }
+
+    // Si se seleccionó una nueva carrera, asignarla
+    if (selectedCareer) {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/students-careers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: studentId,
+          careerId: selectedCareer,
+        }),
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    throw new Error("Error al actualizar la carrera del estudiante");
+  }
+};
+```
+
+## 2. Modificación del Controlador Backend (opcional)
+
+Aunque no es estrictamente necesario modificar el backend si las rutas ya existen, podríamos optimizar el proceso creando un endpoint específico:
+
+### 2.1 Actualizar routes/students.ts (opcional)
+
+```typescript
+// Añadir nueva ruta para actualizar estudiante con carrera
+router.put(
+  "/api/students/:id/with-career",
+  studentsController.updateStudentWithCareer
+);
+```
+
+### 2.2 Actualizar controllers/students.ts (opcional)
+
+```typescript
+export const updateStudentWithCareer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      STUDENT_NAME,
+      STUDENT_PA_LAST_NAME,
+      STUDENT_MA_LAST_NAME,
+      STUDENT_TUITION,
+      careerId,
+    } = req.body;
+
+    // 1. Actualizar datos del estudiante
+    const student = await Student.findByPk(id);
+    if (!student) {
+      return res.status(404).json({ message: "Estudiante no encontrado" });
+    }
+
+    student.STUDENT_NAME = STUDENT_NAME;
+    student.STUDENT_PA_LAST_NAME = STUDENT_PA_LAST_NAME;
+    student.STUDENT_MA_LAST_NAME = STUDENT_MA_LAST_NAME;
+    student.STUDENT_TUITION = STUDENT_TUITION;
+    student.STUDENT_LAST_UPDATE = new Date();
+
+    await student.save();
+
+    // 2. Actualizar carrera (primero eliminar relaciones existentes)
+    await StudentCareer.destroy({ where: { studentId: id } });
+
+    // Si se especificó una carrera, crear la nueva relación
+    if (careerId) {
+      await StudentCareer.create({
+        studentId: id,
+        careerId: careerId,
+      });
+    }
+
+    // 3. Obtener el estudiante actualizado con sus relaciones
+    const updatedStudent = await Student.findByPk(id, {
+      include: [{ model: Career }],
+    });
+
+    res.status(200).json(updatedStudent);
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Error al actualizar el estudiante con carrera" });
+  }
+};
+```
+
+## 3. Plan de Implementación
+
+### Paso 1: Verificar que las rutas necesarias existan
+
+- Confirmar que existen las rutas para `/api/careers`, `/api/students-careers` y operaciones CRUD correspondientes
+
+### Paso 2: Implementar cambios en el frontend
+
+1. Actualizar `StudentsPage.tsx` para incluir:
+   - Estados para manejar carreras
+   - Función para cargar carreras
+   - Columna para mostrar la carrera en la tabla
+   - Selector de carrera en el diálogo de edición
+   - Lógica para actualizar la carrera del estudiante
+
+### Paso 3: Probar la implementación
+
+1. Verificar que la tabla muestra correctamente la carrera de cada estudiante
+2. Comprobar que el diálogo de edición carga la carrera actual del estudiante
+3. Verificar que los cambios de carrera se guardan correctamente
+4. Validar que la interfaz maneja correctamente los casos donde un estudiante no tiene carrera asignada
+
+### Paso 4: Implementar mejoras y optimizaciones (opcional)
+
+1. Crear un endpoint específico para actualizar estudiante con carrera si se considera necesario para optimizar
+2. Mejorar el manejo de errores y validaciones
+3. Añadir indicadores de carga durante las operaciones asíncronas
+
+## Impacto en el Sistema
+
+Esta implementación expande la funcionalidad actual sin modificar la estructura de la base de datos, aprovechando las API existentes y manteniendo el flujo de interacción establecido con los usuarios. La solución mantiene la coherencia con el resto del sistema y sigue el patrón de diseño utilizado en otras partes de la aplicación.

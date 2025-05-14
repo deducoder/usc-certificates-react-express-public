@@ -79,7 +79,7 @@ export const postScore = async (req: Request, res: Response) => {
     }
   } catch (error) {
     console.error(error);
-    res.send(500).json({
+    res.status(500).json({
       msg: "can't create a new score value",
     });
   }

@@ -12,3 +12,5 @@ server/node_modules/
 # Ignore build files
 client/dist/
 server/dist/
+# SpecStory explanation file
+.specstory/.what-is-this.md
