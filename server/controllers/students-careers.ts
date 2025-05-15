@@ -21,29 +21,69 @@ export const getStudentCareer = async (req: Request, res: Response) => {
   }
 };
 
-//function to create a new student-career relation
+// function to get relation by student ID
+export const getStudentCareerByStudentId = async (req: Request, res: Response) => {
+  const { studentId } = req.params;
+  try {
+    const studentCareer = await StudentCareer.findOne({
+      where: {
+        STUDENT_ID: studentId,
+        RELATION_STATUS: 1 // Solo relaciones activas
+      }
+    });
+    
+    if (studentCareer) {
+      res.json(studentCareer);
+    } else {
+      res.status(404).json({
+        msg: `No existe una relación para el estudiante con id: ${studentId}`
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      msg: `Error al buscar relación para el estudiante con id: ${studentId}`,
+    });
+  }
+};
+
+//function to create a new student-career relation or update existing one
 export const postStudentCareer = async (req: Request, res: Response) => {
   const { body } = req; //getting body
   try {
     const existStudentCareer = await StudentCareer.findOne({
       where: {
         STUDENT_ID: body.STUDENT_ID,
+        RELATION_STATUS: 1
       },
     });
-    //validate if exist a previous student with the body.id
+    
+    // Si ya existe una relación, la actualizamos
     if (existStudentCareer) {
-      return res.status(400).json({
-        msg: `already exist relation to this student: ` + body.STUDENT_ID,
+      await existStudentCareer.update({ 
+        CAREER_ID: body.CAREER_ID,
+        // Mantener las fechas existentes o actualizar si se proporcionan nuevas
+        START_DATE: body.START_DATE || existStudentCareer.get('START_DATE'),
+        END_DATE: body.END_DATE || existStudentCareer.get('END_DATE')
+      });
+      
+      return res.json({
+        msg: "Relación estudiante-carrera actualizada correctamente",
+        data: existStudentCareer
       });
     } else {
       //creating a new student-career
       const studentCareer = await StudentCareer.create(body); //post data from body
-      res.json(studentCareer); //sending json with user values as object
+      res.json({
+        msg: "Relación estudiante-carrera creada correctamente",
+        data: studentCareer
+      }); //sending json with user values as object
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
     res.status(500).json({
-      msg: "can't create a new relation",
+      msg: "No se pudo crear o actualizar la relación estudiante-carrera",
+      error: error.message
     });
   }
 };

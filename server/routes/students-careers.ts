@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   deleteStudentCareer,
   getStudentCareer,
+  getStudentCareerByStudentId,
   getStudentsCareers,
   postStudentCareer,
   putStudentCareer,
@@ -10,6 +11,7 @@ import {
 const router = Router();
 
 router.get("/", getStudentsCareers);
+router.get("/student/:studentId", getStudentCareerByStudentId);
 router.get("/:id", getStudentCareer);
 router.post("/", postStudentCareer);
 router.put("/:id", putStudentCareer);

@@ -10,6 +10,11 @@ import {
   Typography,
   TextField,
   DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  CircularProgress,
 } from "@mui/material";
 import NavBar from "../components/NavBar";
 import { useEffect, useState } from "react";
@@ -24,6 +29,7 @@ import { NavLink } from "react-router-dom";
 
 //student definition
 interface student {
+  id?: number;
   STUDENT_ID: number;
   STUDENT_TUITION: number;
   STUDENT_NAME: string;
@@ -32,13 +38,21 @@ interface student {
   STUDENT_CREATION: string;
   STUDENT_LAST_UPDATE: string;
   STUDENT_STATUS: boolean;
+  careers?: Career[];
+}
+
+// Definición de carrera
+interface Career {
+  CAREER_ID: number;
+  CAREER_NAME: string;
+  CAREER_STATUS: boolean;
 }
 
 function Students() {
   const [students, setStudents] = useState<student[]>([]);
-  const [selectedRowEdit, setSelectedRowEdit] = useState<Student | null>(null);
-  const [selectedRowDel, setSelectedRowDel] = useState<Student | null>(null);
-  const [selectedRowActive, setSelectedRowActive] = useState<Student | null>(
+  const [selectedRowEdit, setSelectedRowEdit] = useState<student | null>(null);
+  const [selectedRowDel, setSelectedRowDel] = useState<student | null>(null);
+  const [selectedRowActive, setSelectedRowActive] = useState<student | null>(
     null
   );
   const [openEditDialog, setOpenEditDialog] = useState(false);
@@ -51,7 +65,14 @@ function Students() {
     "success"
   );
   //score
-  const [selectedStuent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedStuent, setSelectedStudent] = useState<student | null>(null);
+  
+  // Estados para carreras
+  const [careers, setCareers] = useState<Career[]>([]);
+  const [selectedCareer, setSelectedCareer] = useState<number | null>(null);
+  const [loadingCareers, setLoadingCareers] = useState<boolean>(false);
+  const [savingChanges, setSavingChanges] = useState<boolean>(false);
+  const [careerChanged, setCareerChanged] = useState<boolean>(false);
 
   //fetching students 
   useEffect(() => {
@@ -65,7 +86,32 @@ function Students() {
         console.error("error fetching students: ", error);
       }
     };
+    
+    const fetchCareers = async () => {
+      setLoadingCareers(true);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/careers`);
+        if (!response.ok) {
+          throw new Error(`Error al obtener carreras: ${response.statusText}`);
+        }
+        const data = await response.json();
+        setCareers(data);
+      } catch (error) {
+        console.error("Error en fetchCareers:", error);
+        setAlertMessage(
+          `Error al cargar carreras: ${
+            error instanceof Error ? error.message : "Error desconocido"
+          }`
+        );
+        setAlertSeverity("error");
+        setAlertOpen(true);
+      } finally {
+        setLoadingCareers(false);
+      }
+    };
+    
     fetchStudents();
+    fetchCareers();
   }, []);
   //students table
   const formatDate = (isoDate: string) => {
@@ -87,6 +133,17 @@ function Students() {
       field: "STUDENT_MA_LAST_NAME",
       headerName: "APELLIDO MATERNO",
       width: 200,
+    },
+    {
+      field: "careerName",
+      headerName: "CARRERA",
+      width: 180,
+      renderCell: (params) => {
+        const studentCareers = params.row.careers || [];
+        return studentCareers.length > 0
+          ? studentCareers[0].CAREER_NAME
+          : 'Sin asignar';
+      }
     },
     {
       field: "STUDENT_CREATION",
@@ -157,7 +214,7 @@ function Students() {
           </IconButton>
           <IconButton
             color="success"
-            onClick={() => handleActivateRow(params.row, 1)}
+            onClick={() => handleActivateRow(params.row)}
             disabled={params.row.STUDENT_STATUS === 1}
           >
             <ReplayIcon></ReplayIcon>
@@ -177,6 +234,7 @@ function Students() {
     STUDENT_CREATION: formatDate(student.STUDENT_CREATION),
     STUDENT_LAST_UPDATE: formatDate(student.STUDENT_LAST_UPDATE),
     STUDENT_STATUS: student.STUDENT_STATUS,
+    careers: student.careers
   }));
 
   const paginationModel = { page: 0, pageSize: 10 };
@@ -184,12 +242,24 @@ function Students() {
   //edit
   const handleEditRow = (row: student) => {
     setSelectedRowEdit(row);
+    setCareerChanged(false);
+    setAlertOpen(false);
+
+    // Establecer la carrera seleccionada si el estudiante tiene alguna
+    if (row.careers && row.careers.length > 0) {
+      setSelectedCareer(row.careers[0].CAREER_ID);
+    } else {
+      setSelectedCareer(null);
+    }
+
     setOpenEditDialog(true);
   };
 
-  const handleEditSubmit = async (updatedRow: Row) => {
-    //console.log(updatedRow.id);
+  const handleEditSubmit = async (updatedRow: student) => {
+    setSavingChanges(true);
+    
     try {
+      // 1. Actualizar datos básicos del estudiante
       const dataToSend = {
         STUDENT_ID: updatedRow.id,
         STUDENT_NAME: updatedRow.STUDENT_NAME,
@@ -204,30 +274,79 @@ function Students() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(dataToSend), // Send the new object
+        body: JSON.stringify(dataToSend),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update student: ${response.statusText}`);
+        throw new Error(`Error al actualizar el estudiante: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      //console.log("Update response:", data);
-      // datos de la alertra
+      // 2. Actualizar la carrera del estudiante si cambió
+      if (careerChanged) {
+        await updateStudentCareer(updatedRow.id);
+      }
+
       setAlertMessage("Estudiante actualizado correctamente");
       setAlertSeverity("success");
       setAlertOpen(true);
+      
+      // Recargar datos
       setTimeout(() => {
         window.location.reload();
-      }, 1000); // 2000 milisegundos = 2 segundos //refresh students page
+      }, 1000);
     } catch (error) {
-      console.error("Error updating student:", error);
-      setAlertMessage("Error al actualizar el estudiante");
+      console.error("Error al actualizar estudiante:", error);
+      setAlertMessage(
+        `Error al actualizar el estudiante: ${
+          error instanceof Error ? error.message : "Error desconocido"
+        }`
+      );
       setAlertSeverity("error");
       setAlertOpen(true);
     } finally {
-      setOpenEditDialog(false); //close dialog
-      setSelectedRowEdit(null); //return row value to null
+      setSavingChanges(false);
+      setOpenEditDialog(false);
+      setSelectedRowEdit(null);
+      setSelectedCareer(null);
+      setCareerChanged(false);
+    }
+  };
+
+  // Función para actualizar la carrera del estudiante
+  const updateStudentCareer = async (studentId: number | undefined) => {
+    if (!studentId) return;
+    
+    try {
+      // Preparar datos para la API
+      const currentDate = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
+      const careerData: any = {
+        STUDENT_ID: studentId,
+        START_DATE: currentDate,
+        END_DATE: currentDate // Usar la misma fecha como placeholder
+      };
+      
+      // Solo añadir CAREER_ID si hay una carrera seleccionada
+      if (selectedCareer !== null) {
+        careerData.CAREER_ID = selectedCareer;
+      }
+      
+      // Llamar a la API para actualizar/crear la relación
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/students-careers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(careerData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error al actualizar la carrera: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Error en updateStudentCareer:", error);
+      throw error; // Propagar el error para manejo en handleEditSubmit
     }
   };
 
@@ -237,7 +356,7 @@ function Students() {
     setOpenDelDialog(true);
   };
 
-  const handleDeleteSubmit = async (deletedRow: Row) => {
+  const handleDeleteSubmit = async (deletedRow: student) => {
     //console.log(deletedRow.id);
     try {
       const dataToSend = {
@@ -283,7 +402,7 @@ function Students() {
     setOpenActivateDialog(true);
   };
 
-  const handleActivateSubmit = async (activatedRow: Row) => {
+  const handleActivateSubmit = async (activatedRow: student) => {
     //console.log(activatedRow.id);
     try {
       const dataToSend = {
@@ -352,9 +471,11 @@ function Students() {
   const handleAlertClose = () => setAlertOpen(false);
 
   //scores
-  const handleSelectedStudent = (row: Student) => {
-    setSelectedStudent(row.id);
-    console.log(row.id);
+  const handleSelectedStudent = (row: student) => {
+    if (row) {
+      setSelectedStudent(row);
+    }
+    //console.log(row.id);
   };
 
   return (
@@ -431,7 +552,7 @@ function Students() {
                     })
                   }
                 />
-                                <TextField
+                <TextField
                   margin="dense"
                   label="Matrícula"
                   fullWidth
@@ -440,10 +561,36 @@ function Students() {
                   onChange={(e) =>
                     setSelectedRowEdit({
                       ...selectedRowEdit,
-                      STUDENT_TUITION: e.target.value,
+                      STUDENT_TUITION: Number(e.target.value),
                     })
                   }
                 />
+                
+                <FormControl fullWidth margin="normal">
+                  <InputLabel id="career-select-label">Carrera</InputLabel>
+                  <Select
+                    labelId="career-select-label"
+                    id="career-select"
+                    value={selectedCareer || ""}
+                    onChange={(e) => {
+                      const newValue = e.target.value ? Number(e.target.value) : null;
+                      setSelectedCareer(newValue);
+
+                      // Verificar si la carrera ha cambiado
+                      const currentCareer = selectedRowEdit?.careers?.[0]?.CAREER_ID || null;
+                      setCareerChanged(newValue !== currentCareer);
+                    }}
+                    disabled={savingChanges}
+                  >
+                    <MenuItem value="">Sin carrera</MenuItem>
+                    {careers.map((career) => (
+                      <MenuItem key={career.CAREER_ID} value={career.CAREER_ID}>
+                        {career.CAREER_NAME}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {loadingCareers && <CircularProgress size={20} sx={{ ml: 1 }} />}
+                </FormControl>
               </>
             )}
           </DialogContent>
@@ -452,6 +599,7 @@ function Students() {
               onClick={() => setOpenEditDialog(false)}
               variant="contained"
               color="error"
+              disabled={savingChanges}
             >
               Cancelar
             </Button>
@@ -461,8 +609,10 @@ function Students() {
               }
               variant="contained"
               color="primary"
+              disabled={savingChanges}
             >
-              Guardar
+              {savingChanges ? "Guardando..." : "Guardar"}
+              {savingChanges && <CircularProgress size={24} sx={{ ml: 1 }} />}
             </Button>
           </DialogActions>
         </Dialog>
